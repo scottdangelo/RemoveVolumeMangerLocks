@@ -46,6 +46,7 @@ REST_API_VERSION_HISTORY = """
 
     * 2.0 - Includes all V1 APIs and extensions.
     * 2.1 - Versions API updated to reflect beginning of microversions epoch.
+    * 2.2 - Versions API updated for removing locks from volume manager
 
 """
 
@@ -53,7 +54,7 @@ REST_API_VERSION_HISTORY = """
 # The default api version request is defined to be the
 # the minimum version of the API supported.
 _MIN_API_VERSION = "2.0"
-_MAX_API_VERSION = "2.1"
+_MAX_API_VERSION = "2.2"
 DEFAULT_API_VERSION = _MIN_API_VERSION
 
 

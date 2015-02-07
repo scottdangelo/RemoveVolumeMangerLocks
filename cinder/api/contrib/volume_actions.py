@@ -75,6 +75,18 @@ class VolumeActionsController(wsgi.Controller):
         super(VolumeActionsController, self).__init__(*args, **kwargs)
         self.volume_api = volume.API()
 
+    @wsgi.Controller.api_version("2.0", "2.1")
+    def _attach_volume(self, req, context, volume, instance_uuid, host_name,
+                       mountpoint, mode):
+        self.volume_api.attach(context, volume, instance_uuid, host_name,
+                               mountpoint, mode, no_locks=False)
+
+    @wsgi.Controller.api_version("2.2")
+    def _attach_volume(self, req, context, volume, instance_uuid, host_name,
+                       mountpoint, mode):
+        self.volume_api.attach(context, volume, instance_uuid, host_name,
+                               mountpoint, mode, no_locks=True)
+
     @wsgi.action('os-attach')
     def _attach(self, req, id, body):
         """Add attachment metadata."""
@@ -115,9 +127,10 @@ class VolumeActionsController(wsgi.Controller):
                     "Attaching mode should be 'rw' or 'ro'")
             raise webob.exc.HTTPBadRequest(explanation=msg)
         try:
-            self.volume_api.attach(context, volume,
-                                   instance_uuid, host_name, mountpoint, mode)
+            self._attach_volume(req, context, volume, instance_uuid, host_name,
+                                mountpoint, mode):
         except messaging.RemoteError as error:
+            #TODO scottda handle exception
             if error.exc_type in ['InvalidVolume', 'InvalidUUID',
                                   'InvalidVolumeAttachMode']:
                 msg = "Error attaching volume - %(err_type)s: %(err_msg)s" % {
@@ -130,6 +143,15 @@ class VolumeActionsController(wsgi.Controller):
                 raise
 
         return webob.Response(status_int=202)
+
+    @wsgi.Controller.api_version("2.0", "2.1")
+    def _detach_volume(self, req, context, volume, attachment_id):
+        self.volume_api.detach(context, volume, attachment_id, no_locks=False)
+
+    @wsgi.Controller.api_version("2.2")
+    def _reserve_volume(self, req, context, volume, attachment_id):
+        self.volume_api.detach(context, volume, attachment_id, no_locks=True)
+
 
     @wsgi.action('os-detach')
     def _detach(self, req, id, body):
@@ -145,7 +167,7 @@ class VolumeActionsController(wsgi.Controller):
             attachment_id = body['os-detach'].get('attachment_id', None)
 
         try:
-            self.volume_api.detach(context, volume, attachment_id)
+            self._reserve_volume(req, context, volume, attachment_id)
         except messaging.RemoteError as error:
             if error.exc_type in ['VolumeAttachmentNotFound', 'InvalidVolume']:
                 msg = "Error detaching volume - %(err_type)s: %(err_msg)s" % \
@@ -159,6 +181,14 @@ class VolumeActionsController(wsgi.Controller):
 
         return webob.Response(status_int=202)
 
+    @wsgi.Controller.api_version("2.0", "2.1")
+    def _reserve_volume(self, req, context, volume):
+        self.volume_api.reserve_volume(context, volume, no_locks=False)
+
+    @wsgi.Controller.api_version("2.2")
+    def _reserve_volume(self, req, context, volume):
+        self.volume_api.reserve_volume(context, volume, no_locks=True)
+
     @wsgi.action('os-reserve')
     def _reserve(self, req, id, body):
         """Mark volume as reserved."""
@@ -168,7 +198,7 @@ class VolumeActionsController(wsgi.Controller):
         except exception.VolumeNotFound as error:
             raise webob.exc.HTTPNotFound(explanation=error.msg)
 
-        self.volume_api.reserve_volume(context, volume)
+        self._reserve_volume(req, context, volume)
         return webob.Response(status_int=202)
 
     @wsgi.action('os-unreserve')
@@ -183,6 +213,14 @@ class VolumeActionsController(wsgi.Controller):
         self.volume_api.unreserve_volume(context, volume)
         return webob.Response(status_int=202)
 
+    @wsgi.Controller.api_version("2.0", "2.1")
+    def _begin_detaching_volume(self, req, context, volume):
+        self.volume_api.begin_detaching(context, volume, no_locks=False)
+
+    @wsgi.Controller.api_version("2.2")
+    def _begin_detaching_volume(self, req, context, volume):
+        self.volume_api.begin_detaching(context, volume, no_locks=True)
+
     @wsgi.action('os-begin_detaching')
     def _begin_detaching(self, req, id, body):
         """Update volume status to 'detaching'."""
@@ -192,7 +230,7 @@ class VolumeActionsController(wsgi.Controller):
         except exception.VolumeNotFound as error:
             raise webob.exc.HTTPNotFound(explanation=error.msg)
 
-        self.volume_api.begin_detaching(context, volume)
+        self._begin_detaching_volume(req, context, volume)
         return webob.Response(status_int=202)
 
     @wsgi.action('os-roll_detaching')

@@ -126,68 +126,6 @@ MAPPING = {
     'cinder.volume.drivers.hitachi.hnas_iscsi.HDSISCSIDriver'}
 
 
-def locked_volume_operation(f):
-    """Lock decorator for volume operations.
-
-    Takes a named lock prior to executing the operation. The lock is named with
-    the operation executed and the id of the volume. This lock can then be used
-    by other operations to avoid operation conflicts on shared volumes.
-
-    Example use:
-
-    If a volume operation uses this decorator, it will block until the named
-    lock is free. This is used to protect concurrent operations on the same
-    volume e.g. delete VolA while create volume VolB from VolA is in progress.
-    """
-    def lvo_inner1(inst, context, volume_id, **kwargs):
-        @utils.synchronized("%s-%s" % (volume_id, f.__name__), external=True)
-        def lvo_inner2(*_args, **_kwargs):
-            return f(*_args, **_kwargs)
-        return lvo_inner2(inst, context, volume_id, **kwargs)
-    return lvo_inner1
-
-
-def locked_detach_operation(f):
-    """Lock decorator for volume detach operations.
-
-    Takes a named lock prior to executing the detach call.  The lock is named
-    with the operation executed and the id of the volume. This lock can then
-    be used by other operations to avoid operation conflicts on shared volumes.
-
-    This locking mechanism is only for detach calls.   We can't use the
-    locked_volume_operation, because detach requires an additional
-    attachment_id in the parameter list.
-    """
-    def ldo_inner1(inst, context, volume_id, attachment_id=None, **kwargs):
-        @utils.synchronized("%s-%s" % (volume_id, f.__name__), external=True)
-        def ldo_inner2(*_args, **_kwargs):
-            return f(*_args, **_kwargs)
-        return ldo_inner2(inst, context, volume_id, attachment_id, **kwargs)
-    return ldo_inner1
-
-
-def locked_snapshot_operation(f):
-    """Lock decorator for snapshot operations.
-
-    Takes a named lock prior to executing the operation. The lock is named with
-    the operation executed and the id of the snapshot. This lock can then be
-    used by other operations to avoid operation conflicts on shared snapshots.
-
-    Example use:
-
-    If a snapshot operation uses this decorator, it will block until the named
-    lock is free. This is used to protect concurrent operations on the same
-    snapshot e.g. delete SnapA while create volume VolA from SnapA is in
-    progress.
-    """
-    def lso_inner1(inst, context, snapshot, **kwargs):
-        @utils.synchronized("%s-%s" % (snapshot.id, f.__name__), external=True)
-        def lso_inner2(*_args, **_kwargs):
-            return f(*_args, **_kwargs)
-        return lso_inner2(inst, context, snapshot, **kwargs)
-    return lso_inner1
-
-
 class VolumeManager(manager.SchedulerDependentManager):
     """Manages attachable block storage devices."""
 
@@ -572,7 +510,6 @@ class VolumeManager(manager.SchedulerDependentManager):
         LOG.info(_LI("Created volume successfully."), resource=vol_ref)
         return vol_ref['id']
 
-    @locked_volume_operation
     def delete_volume(self, context, volume_id, unmanage_only=False):
         """Deletes and unexports volume.
 
@@ -773,8 +710,7 @@ class VolumeManager(manager.SchedulerDependentManager):
                  resource=snapshot)
         return snapshot.id
 
-    @locked_snapshot_operation
-    def delete_snapshot(self, context, snapshot, unmanage_only=False):
+    def delete_snapshot(self, context, snapshot):
         """Deletes and unexports snapshot."""
         context = context.elevated()
         snapshot._context = context
@@ -843,12 +779,15 @@ class VolumeManager(manager.SchedulerDependentManager):
     def attach_volume(self, context, volume_id, instance_uuid, host_name,
                       mountpoint, mode):
         """Updates db to show volume is attached."""
-        @utils.synchronized(volume_id, external=True)
         def do_attach():
             # check the volume status before attaching
             volume = self.db.volume_get(context, volume_id)
             volume_metadata = self.db.volume_admin_metadata_get(
                 context.elevated(), volume_id)
+            if volume['status'] in ['creating', 'deleting', 'detaching']:
+                msg = (_("Volume is currently busy. Current status: %s")
+                       % volume['status'])
+                raise exception.VolumeIsBusy(message=msg)
             if volume['status'] == 'attaching':
                 if (volume_metadata.get('attached_mode') and
                    volume_metadata.get('attached_mode') != mode):
@@ -936,7 +875,6 @@ class VolumeManager(manager.SchedulerDependentManager):
             return self.db.volume_attachment_get(context, attachment_id)
         return do_attach()
 
-    @locked_detach_operation
     def detach_volume(self, context, volume_id, attachment_id=None):
         """Updates db to show volume is detached."""
         # TODO(vish): refactor this into a more general "unreserve"

@@ -101,7 +101,7 @@ class VersionsControllerTestCase(test.TestCase):
         self.assertEqual(api_version_request._MAX_API_VERSION,
                          version_list[0].get('version'))
         self.assertEqual(api_version_request._MIN_API_VERSION,
-                          version_list[0].get('min_version'))
+                         version_list[0].get('min_version'))
 
     def test_versions_version_invalid(self):
         req = fakes.HTTPRequest.blank('/', base_url='http://localhost/v2')
@@ -115,12 +115,13 @@ class VersionsControllerTestCase(test.TestCase):
             self.assertEqual(400, response.status_int)
 
     def test_versions_version_not_found(self):
-        api_version_request_3_0 = api_version_request.APIVersionRequest('3.0')
+        api_version_request_8_0 = api_version_request.APIVersionRequest('8.0')
         self.mock_object(api_version_request,
                          'max_api_version',
                          mock.Mock(return_value=api_version_request_3_0))
 
         class Controller(wsgi.Controller):
+
             @wsgi.Controller.api_version('2.1', '2.1')
             def index(self, req):
                 return 'off'

@@ -195,6 +195,14 @@ class VolumeController(wsgi.Controller):
 
         return self._view_builder.detail(req, vol)
 
+    @wsgi.Controller.api_version("2.0", "2.1")
+    def _delete(self, req, context, volume):
+        self.volume_api.delete(context, volume, no_locks=False)
+
+    @wsgi.Controller.api_version("2.2")
+    def _delete(self, req, context, volume):
+        self.volume_api.delete(context, volume, no_locks=True)
+
     def delete(self, req, id):
         """Delete a volume."""
         context = req.environ['cinder.context']
@@ -203,7 +211,12 @@ class VolumeController(wsgi.Controller):
 
         try:
             volume = self.volume_api.get(context, id)
-            self.volume_api.delete(context, volume)
+            self._delete(req, context, volume)
+            #self.volume_api.delete(context, volume)
+        except exception.VolumeIsBusy as error:
+            #TODO: scottda plumb for HTTPConflict (409)
+            #raise exc.HTTPConflict(explanation=error.msg)
+            raise exc.HTTPNotFound(explanation=error.msg)
         except exception.VolumeNotFound as error:
             raise exc.HTTPNotFound(explanation=error.msg)
         except exception.VolumeAttached:

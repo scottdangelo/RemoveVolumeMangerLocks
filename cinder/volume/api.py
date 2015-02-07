@@ -317,7 +317,13 @@ class API(base.Base):
             return vref
 
     @wrap_check_policy
-    def delete(self, context, volume, force=False, unmanage_only=False):
+    def delete(self, context, volume, force=False, unmanage_only=False, no_locks=False):
+        if no_locks and volume['status'] in ["creating", "deleting",
+                                "attaching", "detaching"]:
+            msg = (_("Volume is currently busy. Current status: %s")
+                   % volume['status'])
+            raise exception.VolumeIsBusy(message=msg)
+
         if context.is_admin and context.project_id != volume['project_id']:
             project_id = volume['project_id']
         else:
@@ -556,7 +562,15 @@ class API(base.Base):
         return snapshots
 
     @wrap_check_policy
-    def reserve_volume(self, context, volume):
+    def reserve_volume(self, context, volume, no_locks=False):
+        if no_locks and volume['status'] in ["creating",
+                                "deleting",
+                                "attaching",
+                                "detaching"]:
+            msg = (_("Volume is currently busy. Current status: %s")
+                   % volume['status'])
+            raise exception.VolumeIsBusy(message=msg)
+
         # NOTE(jdg): check for Race condition bug 1096983
         # explicitly get updated ref and check
         volume = self.db.volume_get(context, volume['id'])
@@ -590,11 +604,20 @@ class API(base.Base):
                  resource=volume)
 
     @wrap_check_policy
-    def begin_detaching(self, context, volume):
+    def begin_detaching(self, context, volume, no_locks=False):
         # NOTE(vbala): The volume status might be 'detaching' already due to
         # a previous begin_detaching call. Get updated volume status so that
         # we fail such cases.
         volume = self.db.volume_get(context, volume['id'])
+
+        if no_locks and volume['status'] in ["creating",
+                                "deleting",
+                                "attaching",
+                                "detaching"]:
+            msg = (_("Volume is currently busy. Current status: %s")
+                   % volume['status'])
+            raise exception.VolumeIsBusy(message=msg)
+
         # If we are in the middle of a volume migration, we don't want the user
         # to see that the volume is 'detaching'. Having 'migration_status' set
         # will have the same effect internally.
@@ -624,12 +647,19 @@ class API(base.Base):
 
     @wrap_check_policy
     def attach(self, context, volume, instance_uuid, host_name,
-               mountpoint, mode):
+               mountpoint, mode, no_locks=False):
         if volume['status'] == 'maintenance':
             LOG.info(_LI('Unable to attach volume, '
                          'because it is in maintenance.'), resource=volume)
             msg = _("The volume cannot be attached in maintenance mode.")
             raise exception.InvalidVolume(reason=msg)
+
+        if no_locks and volume['status'] in ["creating", "deleting",
+                                             "detaching"]:
+            msg = (_("Volume is currently busy. Current status: %s")
+                   % volume['status'])
+            raise exception.VolumeIsBusy(message=msg)
+
         volume_metadata = self.get_volume_admin_metadata(context.elevated(),
                                                          volume)
         if 'readonly' not in volume_metadata:
@@ -653,16 +683,23 @@ class API(base.Base):
         return attach_results
 
     @wrap_check_policy
-    def detach(self, context, volume, attachment_id):
+    def detach(self, context, volume, attachment_id, no_locks=False):
         if volume['status'] == 'maintenance':
             LOG.info(_LI('Unable to detach volume, '
                          'because it is in maintenance.'), resource=volume)
             msg = _("The volume cannot be detached in maintenance mode.")
             raise exception.InvalidVolume(reason=msg)
+
+        if no_locks and volume['status'] in ["creating", "deleting", "attaching"]:
+            msg = (_("Volume is currently busy. Current status: %s")
+                   % volume['status'])
+            raise exception.VolumeIsBusy(message=msg)
+
         detach_results = self.volume_rpcapi.detach_volume(context, volume,
                                                           attachment_id)
         LOG.info(_LI("Detach volume completed successfully."),
                  resource=volume)
+
         return detach_results
 
     @wrap_check_policy
@@ -940,9 +977,13 @@ class API(base.Base):
         return result
 
     @wrap_check_policy
-    def delete_snapshot(self, context, snapshot, force=False,
-                        unmanage_only=False):
-        if not force and snapshot.status not in ["available", "error"]:
+    def delete_snapshot(self, context, snapshot, force=False, no_locks=False):
+        if no_locks and snapshot['status'] in ["creating", "deleting"]:
+            msg = (_("Snapshot is currently busy. Current status: %s")
+                   % snapshot['status'])
+            raise exception.SnapshotIsBusy(message=msg)
+
+        if not force and snapshot['status'] not in ["available", "error"]:
             LOG.error(_LE('Unable to delete snapshot: %(snap_id)s, '
                           'due to invalid status. '
                           'Status must be available or '
