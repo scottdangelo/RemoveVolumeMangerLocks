@@ -23,6 +23,7 @@ import webob.request
 
 from cinder.api.middleware import auth
 from cinder.api.middleware import fault
+from cinder.api.openstack import api_version_request as api_version
 from cinder.api.openstack import wsgi as os_wsgi
 from cinder.api import urlmap
 from cinder.api.v2 import limits
@@ -78,7 +79,7 @@ def wsgi_app(inner_app_v2=None, fake_auth=True, fake_auth_context=None,
 
     mapper = urlmap.URLMap()
     mapper['/v2'] = api_v2
-    mapper['/'] = fault.FaultWrapper(versions.Versions())
+    mapper['/'] = fault.FaultWrapper(versions.VersionsController())
     return mapper
 
 
@@ -112,11 +113,13 @@ class HTTPRequest(webob.Request):
                 kwargs['base_url'] = 'http://localhost/v2'
 
         use_admin_context = kwargs.pop('use_admin_context', False)
+        version = kwargs.pop('version', api_version.DEFAULT_API_VERSION)
         out = os_wsgi.Request.blank(*args, **kwargs)
         out.environ['cinder.context'] = FakeRequestContext(
             'fake_user',
             'fakeproject',
             is_admin=use_admin_context)
+        out.api_version_request = api_version.APIVersionRequest(version)
         return out
 
 

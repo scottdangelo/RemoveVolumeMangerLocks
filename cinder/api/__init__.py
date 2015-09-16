@@ -31,8 +31,7 @@ def root_app_factory(loader, global_conf, **local_conf):
         LOG.warning(_LW('The v1 api is deprecated and will be removed in the '
                         'Liberty release. You should set enable_v1_api=false '
                         'and enable_v2_api=true in your cinder.conf file.'))
-    else:
-        del local_conf['/v1']
-    if not CONF.enable_v2_api:
-        del local_conf['/v2']
+    if CONF.enable_v2_api:
+        LOG.warning(_LW('The v2 api is deprecated and will be removed in the '
+                        'a future release. '))
     return paste.urlmap.urlmap_factory(loader, global_conf, **local_conf)
